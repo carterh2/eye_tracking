@@ -1,0 +1,7 @@
+/data/pre_processed/*
+/data/fixation_events/*
+/data/meaning_maps/*
+__pycache__
+*.png
+*.ipynb
+*.zip
