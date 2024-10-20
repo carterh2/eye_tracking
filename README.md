@@ -23,7 +23,7 @@ The **data** in the `data/pre_processed` folder **is not tracked** within the re
 
 If you choose to use the updated dataset (which by the way already includes the old data) make sure to also update the `participant_info.csv` file under `results/`.
 
-**Jupyter Notebooks will not be part of this repository**: Honestly this is to be discussed, but i would like to keep the code as lean as possible. This is piece of infrastructure. Notebooks should be shared in our notion workplace :).
+**Jupyter Notebooks will not be part of this repository**: Honestly this is to be discussed, but i would like to keep the code as lean as possible. This is a piece of infrastructure. Notebooks should be shared in our notion workplace :).
 
 ## How to develop the pipeline
 I have added two files to the original structure of this project:
