@@ -6,6 +6,7 @@ There is a master function called `run_post_processing`, which filters and merge
 and will return a dataframe, the shape of which we have agreed on.
 """
 import pandas as pd
+from shapely.geometry import Point
 from svg.path import parse_path
 from shapely.geometry import Polygon
 from xml.dom import minidom
@@ -40,7 +41,7 @@ def polygons_from_doc(doc, density=0.05, scale=1, offset=(0,1020)):
     polygons = {}
     for element in doc.getElementsByTagName("path"):
         points = []
-        id = element.getAttribute("id")
+        id = element.getAttribute("inkscape:label")
         for path in parse_path(element.getAttribute("d")):
             points.extend(points_from_path(path, density, scale, offset))
         polygons[id] = Polygon(points)
@@ -70,6 +71,14 @@ def dob_to_age(ID_col: pd.Series, DoB_col: pd.Series) -> pd.Series:
     return pd.Series(age)
 
 
+
+def classify_roi(row, regions):
+  x = row["avg_x"]
+  y = row["avg_y"]
+  point = Point(x,y)
+  for region in regions:
+    if regions[region].contains(point):
+      return region
 
 
 ########################################################################################

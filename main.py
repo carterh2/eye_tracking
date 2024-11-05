@@ -179,12 +179,23 @@ def run_fixation_classification():
     processed_fixations.to_csv("./results/processed_fixations.csv", index = False) 
 
 
+def run_post_processing_routine():
+    # fetch processed fixations
+    fixation = pd.read_csv("./results/processed_fixations.csv")
+
+    # run routine
+    post_processed_fixation = run_post_processing(fixation)
+
+    # store result
+    post_processed_fixation.to_csv("./results/post_processed_data.csv")
+
 def main() -> None:
     """
     :param n: number of files to process. default = None; extract all. Specifying n will pick the first N files
     :return:
     """
     yes_no_prompt("do you want to reload and reclassify the data?", run_fixation_classification)
+    yes_no_prompt("do you want to rerun the post processing", run_post_processing_routine)
     # Make timeseries plots of fixation detection
     # process_plots(dfs, files)
 
