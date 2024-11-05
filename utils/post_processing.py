@@ -77,15 +77,15 @@ def dob_to_age(ID_col: pd.Series, DoB_col: pd.Series) -> pd.Series:
 ########################################################################################
 
 def run_post_processing(processed_fixations: pd.DataFrame) -> pd.DataFrame: 
-    """
-    
-    #Read in .csv files
-    obs = pd.read_csv("processed_fixations.csv")
-    ppl = pd.read_csv("participant_info.csv")
 
+    #Read in .csv files
+    obs = pd.read_csv("/results/processed_fixations.csv")
+    ppl = pd.read_csv("/results/participant_info.csv")
     #Convert to DataFrame
     df_obs = pd.DataFrame(obs)
     df_ppl = pd.DataFrame(ppl)
+    #Merge them into one DataFrame by performing an Inner Join on ID
+    df = pd.merge(df_obs,df_ppl, left_on = 'ID', right_on='ID', how = "inner")
     #Create Age column
     df['age'] = dob_to_age(df['ID'],df['DoB'])
     #Create Gender Binary Variables while avoiding dummy variable trap
@@ -109,5 +109,4 @@ def run_post_processing(processed_fixations: pd.DataFrame) -> pd.DataFrame:
     d['Age_Group_Cluster'] = pd.cut(d['age'], bins=bins, labels=labels, right=True, include_lowest=True)
 
     
-    """
     return processed_fixations
