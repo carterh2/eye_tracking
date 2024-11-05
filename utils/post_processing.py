@@ -99,17 +99,15 @@ def run_post_processing(processed_fixations: pd.DataFrame) -> pd.DataFrame:
     df['age'] = dob_to_age(df['ID'],df['DoB'])
     #Create Gender Binary Variables while avoiding dummy variable trap
     df['female'] = np.where(df['Gender']=='FEMALE',1,0)
-    df['other'] = np.where(df['Gender']=='OTHER',1,0)
     # Filter out participants with only "valid demographics"
-    result = df.loc[(df['age'] >= 5) & (df['age'] <=59) & (df['DoB'] != 2000) & (df['Gender']!= "OTHER"),:]
-
+    result = df.loc[(df['age'] >= 5) & (df['age'] <=59) & (df['DoB'] != 2000) & (df['Gender']!= "OTHER") & (df['duration']>0.06),:]
     #Utilize K-Means Clustering to bin ages
     X = result['age'].values.reshape(-1,1)
     kmeans_5 = KMeans(n_clusters=5, random_state=0)
     labels_5 = kmeans_5.fit_predict(X)
     #Bin Ages accordingly
     #Here we will choose to make age buckets based on 5 clusters
-    result['Age Clusters'] = kmeans_5.fit_predict(result.loc[:,"age"])
+    result['Age Clusters'] = kmeans_5.fit_predict(X)
 
     # Step 2: Determine age ranges within each cluster
     age_ranges = result.groupby('Age Clusters')['age'].agg(['min', 'max']).sort_values(by='min')
@@ -122,3 +120,4 @@ def run_post_processing(processed_fixations: pd.DataFrame) -> pd.DataFrame:
 
     
     return result
+
