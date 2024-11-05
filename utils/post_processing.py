@@ -109,7 +109,7 @@ def run_post_processing(processed_fixations: pd.DataFrame) -> pd.DataFrame:
     labels_5 = kmeans_5.fit_predict(X)
     #Bin Ages accordingly
     #Here we will choose to make age buckets based on 5 clusters
-    d['Age Clusters'] = kmeans_5.fit_predict(d[['age']])
+    d.loc[:,'Age Clusters'] = kmeans_5.fit_predict(X)
 
     # Step 2: Determine age ranges within each cluster
     age_ranges = d.groupby('Age Clusters')['age'].agg(['min', 'max']).sort_values(by='min')
