@@ -101,24 +101,24 @@ def run_post_processing(processed_fixations: pd.DataFrame) -> pd.DataFrame:
     df['female'] = np.where(df['Gender']=='FEMALE',1,0)
     df['other'] = np.where(df['Gender']=='OTHER',1,0)
     # Filter out participants with only "valid demographics"
-    d = df.loc[(df['age'] >= 5) & (df['age'] <=59) & (df['DoB'] != 2000) & (df['Gender']!= "OTHER"),:]
+    result = df.loc[(df['age'] >= 5) & (df['age'] <=59) & (df['DoB'] != 2000) & (df['Gender']!= "OTHER"),:]
 
     #Utilize K-Means Clustering to bin ages
-    X = d['age'].values.reshape(-1,1)
+    X = result['age'].values.reshape(-1,1)
     kmeans_5 = KMeans(n_clusters=5, random_state=0)
     labels_5 = kmeans_5.fit_predict(X)
     #Bin Ages accordingly
     #Here we will choose to make age buckets based on 5 clusters
-    d.loc[:,'Age Clusters'] = kmeans_5.fit_predict(X)
+    result['Age Clusters'] = kmeans_5.fit_predict(result.loc[:,"age"])
 
     # Step 2: Determine age ranges within each cluster
-    age_ranges = d.groupby('Age Clusters')['age'].agg(['min', 'max']).sort_values(by='min')
+    age_ranges = result.groupby('Age Clusters')['age'].agg(['min', 'max']).sort_values(by='min')
     age_ranges['Age_Range'] = age_ranges.apply(lambda row: f"{row['min']}-{row['max']}", axis=1)
 
     bins = [5,17,26,35,45,59]
     labels=['5-17','18-26','27-35','36-45','46-59']
 
-    d.loc[:, 'Age_Group_Cluster'] = pd.cut(d['age'], bins=bins, labels=labels, right=True, include_lowest=True)
+    result.loc[:, 'Age_Group_Cluster'] = pd.cut(result['age'], bins=bins, labels=labels, right=True, include_lowest=True)
 
     
-    return processed_fixations
+    return result
