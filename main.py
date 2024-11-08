@@ -180,13 +180,12 @@ def run_fixation_classification():
 
 
 def run_post_processing_routine():
-    # fetch processed fixations
-    fixation = pd.read_csv("./results/processed_fixations.csv")
-
     # run routine
-    post_processed_fixation = run_post_processing(fixation)
+    print("running post processing routine:")
+    post_processed_fixation = run_post_processing()
 
     # store result
+    print("Success!\nstoring result under './results/post_processed_data.csv'")
     post_processed_fixation.to_csv("./results/post_processed_data.csv")
 
 def main() -> None:
@@ -196,21 +195,6 @@ def main() -> None:
     """
     yes_no_prompt("do you want to reload and reclassify the data?", run_fixation_classification)
     yes_no_prompt("do you want to rerun the post processing", run_post_processing_routine)
-    # Make timeseries plots of fixation detection
-    # process_plots(dfs, files)
-
-    # Make other plots
-    # plot_rms(dfs, files, compute=True)
-
-    ########################################################################################
-    ## OUR CODE WAS INSERTED HERE                                                         ##
-    ######################################################################################## 
-    # used_data = run_post_processing(processed_fixations)
-
-    # run_age_and_fixation_duration_analysis(used_data)
-    ########################################################################################
-    ##                                                                                    ##
-    ########################################################################################
 
 if __name__ == '__main__':
     main()
