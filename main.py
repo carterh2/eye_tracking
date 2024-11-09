@@ -34,6 +34,7 @@ from utils.dataloader_helpers import (check_for_valid_gaze_freeviewing,
                                       run_hessels_classifier)
 from utils.post_processing import run_post_processing
 from utils.analysis import run_age_and_fixation_duration_analysis
+from utils.app import yes_no_prompt
 
 # TEST
 def check_isi():
@@ -161,49 +162,39 @@ def load_fixation_events(dfs: List[pd.DataFrame] = None, files: List[Path] = Non
 
     return events, files
 
+def run_fixation_classification():
+    # Load and process. Set pre_process=False if preprocessing has already been done (saves time)
+    # dfs, files = load_data(pre_process=True, n=n)
+    dfs, files = load_data(pre_process=False, n=None)
 
-def main(n: int = None) -> None:
+    # Load or process fixation events. Supply no dataframes if you want to load already saved events
+    events, files = load_fixation_events(dfs, files)
+    # events, files = load_fixation_events()
+
+    # Filter out saccades, and enumerate all fixation events per participant (i.e., 1st, 2nd landings, etc.).
+    # Then combine all participants into one big df.
+    processed_fixations = enumerate_and_concat_fixations(events, files)
+
+    # saving the results without the index (since it contains no information)
+    processed_fixations.to_csv("./results/processed_fixations.csv", index = False) 
+
+
+def run_post_processing_routine():
+    # run routine
+    print("running post processing routine:")
+    post_processed_fixation = run_post_processing()
+
+    # store result
+    print("Success!\nstoring result under './results/post_processed_data.csv'")
+    post_processed_fixation.to_csv("./results/post_processed_data.csv")
+
+def main() -> None:
     """
     :param n: number of files to process. default = None; extract all. Specifying n will pick the first N files
     :return:
     """
-    while True:
-        # put prompting in game loop to prevent typos from crashing the programm
-        answer = input("do you want to reload and reclassify the data? [y,N]")
-
-        if answer == "y":
-            # Load and process. Set pre_process=False if preprocessing has already been done (saves time)
-            # dfs, files = load_data(pre_process=True, n=n)
-            dfs, files = load_data(pre_process=False, n=n)
-
-            # Load or process fixation events. Supply no dataframes if you want to load already saved events
-            events, files = load_fixation_events(dfs, files)
-            # events, files = load_fixation_events()
-
-            # Filter out saccades, and enumerate all fixation events per participant (i.e., 1st, 2nd landings, etc.).
-            # Then combine all participants into one big df.
-            processed_fixations = enumerate_and_concat_fixations(events, files)
-            break
-        elif answer == "N":
-            break
-        else:
-            print("Invalid answer")
-    
-    # Make timeseries plots of fixation detection
-    # process_plots(dfs, files)
-
-    # Make other plots
-    # plot_rms(dfs, files, compute=True)
-
-    ########################################################################################
-    ## OUR CODE WAS INSERTED HERE                                                         ##
-    ######################################################################################## 
-    used_data = run_post_processing(processed_fixations)
-
-    run_age_and_fixation_duration_analysis(used_data)
-    ########################################################################################
-    ##                                                                                    ##
-    ########################################################################################
+    yes_no_prompt("do you want to reload and reclassify the data?", run_fixation_classification)
+    yes_no_prompt("do you want to rerun the post processing", run_post_processing_routine)
 
 if __name__ == '__main__':
     main()

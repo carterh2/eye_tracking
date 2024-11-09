@@ -108,6 +108,8 @@ dependencies:
   - xz
   - zlib
   - zstd
+  - shapely # for handling polygons
+  - svg.path # for parsing svg-paths
   - pip:
     - i2mc==2.1.1
 prefix: /Users/4137477/opt/anaconda3/envs/nemo_eyetracking
