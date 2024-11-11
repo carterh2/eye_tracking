@@ -83,6 +83,8 @@ def classify_roi(row, regions):
     for region in regions:
         if regions[region].contains(point):
             return region
+    # Avoid None values, to not run into shape errors when fitting regressions.
+    return "None"
 
 
 ########################################################################################
@@ -92,13 +94,10 @@ def classify_roi(row, regions):
 def run_post_processing() -> pd.DataFrame:
     print("\tfetching processed data..")
     # Read in .csv files
-    obs = pd.read_csv(r"./results/processed_fixations.csv")
-    ppl = pd.read_csv(r"./results/participant_info.csv")
-    # Convert to DataFrame
-    df_obs = pd.DataFrame(obs)
-    df_ppl = pd.DataFrame(ppl)
+    obs = pd.read_csv("./results/processed_fixations.csv")
+    ppl = pd.read_csv("./results/participant_info.csv")
     # Merge them into one DataFrame by performing an Inner Join on ID
-    df = pd.merge(df_obs, df_ppl, left_on='ID', right_on='ID', how="inner")
+    df = pd.merge(obs, ppl, left_on='ID', right_on='ID', how="inner")
     # Create Age column
     df['age'] = dob_to_age(df['ID'], df['DoB'])
     # Create Gender Binary Variables while avoiding dummy variable trap
