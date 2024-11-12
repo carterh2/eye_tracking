@@ -145,4 +145,12 @@ def run_post_processing() -> pd.DataFrame:
     regions = get_polygons_from_svg("./data/regions.svg")
 
     result["ROI"] = result.apply(lambda row: classify_roi(row, regions), axis=1)
+
+    print("\tgenerating ROI dummies...")
+
+    roi_dummies = pd.get_dummies(
+        result['ROI'], drop_first = True
+    ).astype(int)
+
+    result = pd.concat([result,roi_dummies], axis = 1)
     return result
