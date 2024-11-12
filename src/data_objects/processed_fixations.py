@@ -15,10 +15,13 @@ class ProcessedFixations(pd.DataFrame):
         result = run_post_processing()
         return super().__init__(result)
     
-    def fit_cox(self, formula = "Age_Group_Cluster", duration_col = "duration"):
+    def fit_cox(self, formula = "Age_Group_Cluster", duration_col = "duration", return_fitter = False):
         coxph = CoxPHFitter()
         coxph.fit(self, duration_col = duration_col, formula = formula)
         coxph.print_summary()
+        coxph.plot()
+        if return_fitter:
+            return coxph
     
     def fit_mixed_effects(self):
         pass
