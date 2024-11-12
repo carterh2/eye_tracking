@@ -110,6 +110,7 @@ dependencies:
   - zstd
   - shapely # for handling polygons
   - svg.path # for parsing svg-paths
+  - lifelines # for cox regression
   - pip:
     - i2mc==2.1.1
 prefix: /Users/4137477/opt/anaconda3/envs/nemo_eyetracking
