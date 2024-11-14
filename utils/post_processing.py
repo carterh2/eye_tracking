@@ -86,6 +86,12 @@ def classify_roi(row, regions):
     # Avoid None values, to not run into shape errors when fitting regressions.
     return "None"
 
+def get_roi_area(row, regions):
+  # this function requires classify_roi to be called beforehand
+  region = row["ROI"]
+  if region in regions:
+    return regions[region].area
+
 
 ########################################################################################
 ##                                                                                    ##
@@ -146,8 +152,10 @@ def run_post_processing() -> pd.DataFrame:
 
     result["ROI"] = result.apply(lambda row: classify_roi(row, regions), axis=1)
 
+    print("\tfetching ROI areas")
+    result["ROI_area"] = result.apply(lambda row: get_roi_area(row, regions), axis=1)
+    
     print("\tgenerating ROI dummies...")
-
     roi_dummies = pd.get_dummies(
         result['ROI'], drop_first = True
     ).astype(int)
