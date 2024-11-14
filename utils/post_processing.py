@@ -192,7 +192,7 @@ def run_post_processing() -> pd.DataFrame:
     avg_rgb = np.array(stim).mean(axis=(0, 1))[:3]
     result["red_diff"] = result.red - avg_rgb[0]
     result["green_diff"] = result.green - avg_rgb[1]
-    result["blue_diff"] = result.blue - avg_rgb[0]
+    result["blue_diff"] = result.blue - avg_rgb[2]
 
     result["rgb_diff_euclidean"] = np.sqrt(result.red_diff**2 + result.green_diff**2 + result.blue_diff**2)
     
