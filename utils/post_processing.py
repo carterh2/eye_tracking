@@ -12,6 +12,7 @@ from shapely.geometry import Polygon
 from xml.dom import minidom
 import numpy as np
 from sklearn.cluster import KMeans
+from PIL import Image
 
 ########################################################################################
 ## Insert your util functions here                                                    ##
@@ -87,11 +88,31 @@ def classify_roi(row, regions):
     return "None"
 
 def get_roi_area(row, regions):
-  # this function requires classify_roi to be called beforehand
-  region = row["ROI"]
-  if region in regions:
-    return regions[region].area
+    # this function requires classify_roi to be called beforehand
+    region = row["ROI"]
+    if region in regions:
+        return regions[region].area
 
+
+def get_roi_spectral(row, image, col="r"):
+    """
+    Extracts the spectral color value (so either red, green or blue) from a given fixation.
+
+    Parameters:
+        row: row form the compiled fixations dataframe
+        image: PIL.Image instance
+
+    Returns None if the avg_x and avg_y values are out of bounds
+    """
+    x = int(row["avg_x"])
+    y = int(row["avg_y"])
+    ind = 0
+    if col == "g":
+        ind = 1
+    elif col == "b":
+        ind = 2
+    if (x >= 0 and x <= image.size[0]) and (y >= 0 and y<= image.size[1]): 
+        return image.load()[x-1, y-1][ind]
 
 ########################################################################################
 ##                                                                                    ##
@@ -159,6 +180,20 @@ def run_post_processing() -> pd.DataFrame:
     roi_dummies = pd.get_dummies(
         result['ROI'], drop_first = True
     ).astype(int)
-
     result = pd.concat([result,roi_dummies], axis = 1)
+
+    print("\tgenerating rgb values for fixations")
+    stim = Image.open("./data/stimulus.jpg")
+    result["red"] = result.apply(lambda row: get_roi_spectral(row, stim, col="r"), axis=1)
+    result["green"] = result.apply(lambda row: get_roi_spectral(row, stim, col="g"), axis=1)
+    result["blue"] = result.apply(lambda row: get_roi_spectral(row, stim, col="b"), axis=1)
+
+    print("\tcreating differences from average rgb value")
+    avg_rgb = np.array(stim).mean(axis=(0, 1))[:3]
+    result["red_diff"] = result.red - avg_rgb[0]
+    result["green_diff"] = result.green - avg_rgb[1]
+    result["blue_diff"] = result.blue - avg_rgb[0]
+
+    result["rgb_diff_euclidean"] = np.sqrt(result.red_diff**2 + result.green_diff**2 + result.blue_diff**2)
+    
     return result
