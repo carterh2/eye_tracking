@@ -133,7 +133,7 @@ def run_post_processing() -> pd.DataFrame:
     print("\tfiltering valid data...")
     # Filter out participants with only "valid demographics"
     result = df.loc[(df['age'] >= 5) & (df['age'] <= 59) & (df['DoB'] != 2000) & (
-        df['Gender'] != "OTHER") & (df['duration'] > 0.06), :].copy()
+        df['Gender'] != "OTHER") & (df['duration'] > 0.06) & (df['duration'] < 2), :].copy()
     
     print("\trunning age binning clustering...")
     # Utilize K-Means Clustering to bin ages
