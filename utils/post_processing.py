@@ -93,6 +93,8 @@ def get_roi_area(row, regions):
     if region in regions:
         return regions[region].area
 
+# breaks = c(0, 60/360, 120/360, 180/360, 240/360, 300/360, 1),
+#   labels = c("Red", "Yellow", "Green", "Cyan", "Blue", "Magenta")
 def categorize_hue(hue):
     """
     Categorizes a hue value into its corresponding color.
@@ -110,24 +112,18 @@ def categorize_hue(hue):
     hue %= 360
 
     # Categorize hue into colors
-    if hue <= 30:
+    if hue <= 60:
         return "Red"
-    elif hue <= 60:
-        return "Orange"
-    elif hue <= 90:
+    elif hue <= 120:
         return "Yellow"
-    elif hue <= 150:
-        return "Green"
     elif hue <= 180:
-        return "Cyan/Teal"
+        return "Green"
     elif hue <= 240:
-        return "Blue"
-    elif hue <= 270:
-        return "Purple"
+        return "Cyan/Teal"
     elif hue <= 300:
-        return "Magenta/Pink"
+        return "Blue"
     else:
-        return "Red"
+        return "Magenta"
 
 def get_pix_hsb(row, image, type="color", width = 1920, height = 1080):
     """
