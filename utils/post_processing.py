@@ -93,8 +93,43 @@ def get_roi_area(row, regions):
     if region in regions:
         return regions[region].area
 
+def categorize_hue(hue):
+    """
+    Categorizes a hue value into its corresponding color.
 
-def get_roi_spectral(row, image, col="r"):
+    Args:
+        hue (float): A hue value between 0 and 360.
+
+    Returns:
+        str: The name of the color category.
+    """
+    if not (0 <= hue <= 360):
+        return "Invalid hue value. It must be between 0 and 360."
+
+    # Use modulo 360 to handle hue wraparound, ensuring hue stays in [0, 360)
+    hue %= 360
+
+    # Categorize hue into colors
+    if hue <= 30:
+        return "Red"
+    elif hue <= 60:
+        return "Orange"
+    elif hue <= 90:
+        return "Yellow"
+    elif hue <= 150:
+        return "Green"
+    elif hue <= 180:
+        return "Cyan/Teal"
+    elif hue <= 240:
+        return "Blue"
+    elif hue <= 270:
+        return "Purple"
+    elif hue <= 300:
+        return "Magenta/Pink"
+    else:
+        return "Red"
+
+def get_pix_hsb(row, image, type="color", width = 1920, height = 1080):
     """
     Extracts the spectral color value (so either red, green or blue) from a given fixation.
 
@@ -104,6 +139,20 @@ def get_roi_spectral(row, image, col="r"):
 
     Returns None if the avg_x and avg_y values are out of bounds
     """
+    x = int(row["avg_x"])
+    y = int(row["avg_y"])
+    ind = 0
+    if type == "s":
+        ind = 1
+    elif type == "b":
+        ind = 2
+    if (x >= 0 and x <= width) and (y >= 0 and y<= height): 
+        value = image[x-1, y-1][ind]
+        if type == "color":
+            value = categorize_hue(value)
+        return value
+
+def get_pix_spectral(row, image, col="r"):
     x = int(row["avg_x"])
     y = int(row["avg_y"])
     ind = 0
@@ -183,18 +232,30 @@ def run_post_processing() -> pd.DataFrame:
     ).astype(int)
     result = pd.concat([result,roi_dummies], axis = 1)
 
-    print("\tgenerating rgb values for fixations")
+    print("\tgenerating rgb values for fixations...")
     stim = Image.open("./data/stimulus.jpg")
-    result["red"] = result.apply(lambda row: get_roi_spectral(row, stim, col="r"), axis=1)
-    result["green"] = result.apply(lambda row: get_roi_spectral(row, stim, col="g"), axis=1)
-    result["blue"] = result.apply(lambda row: get_roi_spectral(row, stim, col="b"), axis=1)
+    result["red"] = result.apply(lambda row: get_pix_spectral(row, stim, col="r"), axis=1)
+    result["green"] = result.apply(lambda row: get_pix_spectral(row, stim, col="g"), axis=1)
+    result["blue"] = result.apply(lambda row: get_pix_spectral(row, stim, col="b"), axis=1)
 
-    print("\tcreating differences from average rgb value")
+    print("\tcreating differences from average rgb value...")
     avg_rgb = np.array(stim).mean(axis=(0, 1))[:3]
     result["red_diff"] = result.red - avg_rgb[0]
     result["green_diff"] = result.green - avg_rgb[1]
     result["blue_diff"] = result.blue - avg_rgb[2]
 
     result["rgb_diff_euclidean"] = np.sqrt(result.red_diff**2 + result.green_diff**2 + result.blue_diff**2)
+    
+    print("\tcreating color, saturation and brightness values...")
+    stim = stim.convert("HSV").load()
+    result["Color"] = result.apply(lambda row: get_pix_hsb(row, stim), axis=1)
+    result["Saturation"] = result.apply(lambda row: get_pix_hsb(row, stim, type="s"), axis=1)
+    result["Brightness"] = result.apply(lambda row: get_pix_hsb(row, stim, type="b"), axis=1)
+
+    result["Saturation_normed"] = (result.Saturation - result.Saturation.mean())/result.Saturation.std()
+    result["Brightness_normed"] = (result.Brightness - result.Brightness.mean())/result.Brightness.std()
+    
+    print("\tExcluding out of bounds fixations...")
+    result = result.loc[~result.Saturation.isna(), :]
     
     return result
