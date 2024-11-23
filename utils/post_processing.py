@@ -193,15 +193,11 @@ def run_post_processing() -> pd.DataFrame:
     # Step 2: Determine age ranges within each cluster
     age_ranges = result.groupby('Age Clusters')['age'].agg(
         ['min', 'max']).sort_values(by='min')
-    age_ranges['Age_Range'] = age_ranges.apply(
+    age_ranges['Age_Group_Cluster'] = age_ranges.apply(
         lambda row: f"{row['min']}-{row['max']}", axis=1)
-    # create bin labels
-    bins = [5, 17, 26, 35, 45, 59]
-    labels = ['5-17', '18-26', '27-35', '36-45', '46-59']
-    # assign bin labels to new column
-    result['Age_Group_Cluster'] = pd.cut(
-        result['age'], bins=bins, labels=labels, right=True, include_lowest=True)
     
+    result = result.join(age_ranges.loc[:,"Age_Group_Cluster"], on = "Age Clusters")
+
     # generate dummy variables
     age_dummies = pd.get_dummies(
         result['Age_Group_Cluster'], prefix='Age', drop_first=True).astype(int)
