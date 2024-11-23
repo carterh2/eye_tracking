@@ -35,6 +35,7 @@ from utils.dataloader_helpers import (check_for_valid_gaze_freeviewing,
 from utils.post_processing import run_post_processing
 from utils.analysis import run_age_and_fixation_duration_analysis
 from utils.app import yes_no_prompt
+from lifelines import CoxPHFitter
 
 # TEST
 def check_isi():
@@ -188,6 +189,19 @@ def run_post_processing_routine():
     print("Success!\nstoring result under './results/post_processed_data.csv'")
     post_processed_fixation.to_csv("./results/post_processed_data.csv")
 
+def fit_and_run_cox_model():
+    pf = pd.read_csv("./results/post_processed_data.csv")
+    
+    # fitting the model
+    cph = CoxPHFitter()
+    cph.fit(pf,
+            duration_col= "duration",
+            formula = "Order + Order^2 + ROI + Color + Saturation_normed + Brightness_normed + Age_Group_Cluster + Gender")
+    
+    # print the summary
+    cph.print_summary()
+
+
 def main() -> None:
     """
     :param n: number of files to process. default = None; extract all. Specifying n will pick the first N files
@@ -195,6 +209,7 @@ def main() -> None:
     """
     yes_no_prompt("do you want to reload and reclassify the data?", run_fixation_classification)
     yes_no_prompt("do you want to rerun the post processing", run_post_processing_routine)
+    yes_no_prompt("do you want to refit the cox-model?", fit_and_run_cox_model)
 
 if __name__ == '__main__':
     main()

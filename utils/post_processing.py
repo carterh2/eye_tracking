@@ -85,16 +85,16 @@ def classify_roi(row, regions):
         if regions[region].contains(point):
             return region
     # Avoid None values, to not run into shape errors when fitting regressions.
-    return "None"
+    return "No_ROI"
 
 def get_roi_area(row, regions):
     # this function requires classify_roi to be called beforehand
     region = row["ROI"]
     if region in regions:
         return regions[region].area
+    return 0
 
-# breaks = c(0, 60/360, 120/360, 180/360, 240/360, 300/360, 1),
-#   labels = c("Red", "Yellow", "Green", "Cyan", "Blue", "Magenta")
+
 def categorize_hue(hue):
     """
     Categorizes a hue value into its corresponding color.
@@ -221,7 +221,7 @@ def run_post_processing() -> pd.DataFrame:
 
     print("\tfetching ROI areas")
     result["ROI_area"] = result.apply(lambda row: get_roi_area(row, regions), axis=1)
-    
+
     print("\tgenerating ROI dummies...")
     roi_dummies = pd.get_dummies(
         result['ROI'], drop_first = True
