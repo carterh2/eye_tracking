@@ -1,0 +1,484 @@
+---
+title: 'Modelling: LMM'
+output:
+  html_document: default
+  pdf_document: default
+date: "`r Sys.Date()`"
+---
+
+## Modelling
+
+We use a LMM to model log duration fixation against order of fixation, age and gender.
+First, we load packages and the dataset. Also we reorder the age group variable such that it goes from youngest to oldest group.
+
+```{r library and df, results = 'hide'}
+setwd("C:/Users/ekaba/0 Uni TUDO/Case Studies/eye_tracking")
+
+library(parameters)
+library(dplyr)
+library(lme4)
+library(ggplot2)
+library(clubSandwich)
+library(performance)
+library(car)
+library(colorspace)
+library(lmerTest)
+
+
+df <- read.csv("./results/post_processed_data.csv")
+
+# Reorder Age_Group_Cluster such that "5-17" is the first group
+df$Age_Group_Cluster <- factor(df$Age_Group_Cluster,
+                               levels = c("5-18", "19-26", "27-35", "36-45", "46-59"))
+
+
+df$Order_standardized <- (df$Order - mean(df$Order))/sd(df$Order)
+
+#df <- df %>%
+# filter(duration < 2) %>% 
+#  mutate(log_duration = log(duration))
+
+# Convert the variable to a factor first
+df$ROI <- factor(df$ROI)
+
+# Use relevel to set the reference level to "None"
+df$ROI <- relevel(df$ROI, ref = "No_ROI")
+
+# Replace NA values in column 'your_column' with the mean of that column
+
+#df <- df %>%
+#  mutate(red = ifelse(is.na(red), mean(red, na.rm = TRUE), red))
+
+#df <- df %>%
+#  mutate(green = ifelse(is.na(green), mean(green, na.rm = TRUE), green))
+
+#df <- df %>%
+#  mutate(blue = ifelse(is.na(blue), mean(blue, na.rm = TRUE), blue))
+
+df$red_std <- (df$red - mean(df$red))/sd(df$red)
+df$green_std <- (df$green - mean(df$green))/sd(df$green)
+df$blue_std <- (df$blue - mean(df$blue))/sd(df$blue)
+
+df$R_norm <- df$red / 255
+df$G_norm <- df$green / 255
+df$B_norm <- df$blue / 255
+
+# Create a matrix of normalized RGB values
+rgb_matrix <- as.matrix(df[, c('R_norm', 'G_norm', 'B_norm')])
+
+# Convert RGB to HSV
+hsv_values <- RGB(rgb_matrix) %>% as("HSV") %>% coords()
+
+# Add HSV values to the data frame
+df$Hue <- hsv_values[, 1]
+df$Saturation <- hsv_values[, 2]
+df$Brightness <- hsv_values[, 3]
+
+# Normalize Hue to [0, 1]
+df$Hue_norm <- df$Hue / 360
+
+# Standardize predictors
+df$Hue_std <- scale(df$Hue_norm)
+df$Saturation_std <- scale(df$Saturation)
+df$Brightness_std <- scale(df$Brightness)
+
+# Define color categories based on Hue ranges
+df$ColorCategory <- cut(
+  df$Hue_norm,
+  breaks = c(0, 60/360, 120/360, 180/360, 240/360, 300/360, 1),
+  labels = c("Red", "Yellow", "Green", "Cyan", "Blue", "Magenta"),
+  include.lowest = TRUE
+)
+
+# Convert to factor
+df$ColorCategory <- factor(df$ColorCategory)
+
+df <- df %>% 
+  filter(Valid == 'True')
+
+```
+
+
+```{r functions, echo=FALSE}
+plot_residuals <- function(model){
+  
+  residuals_model <- residuals(model, type = "pearson")
+  
+  # Plot residuals vs fitted values
+  fitted_values <- fitted(model)
+  plot(fitted_values, residuals_model, xlab = "Fitted Values", ylab = "Residuals",
+       main = "Residuals vs Fitted Values")
+  abline(h = 0, col = "red", lty = 2)
+  
+  # Q-Q plot of residuals
+  qqnorm(residuals_model, main = "Q-Q Plot of Residuals")
+  qqline(residuals_model, col = "red")
+  
+  #create histogram of residuals
+  hist(residuals_model, xlab = "Residuals", main = "Histogram of the residuals")
+  
+  predicted_values <- predict(model)
+  
+  # Create a data frame with actual and predicted values
+  plot_data <- data.frame(
+    Actual_Log_Duration = df$log_duration,  # Actual log-transformed duration
+    Predicted_Log_Duration = predicted_values
+  )
+  
+  min_value <- min(plot_data$Predicted_Log_Duration, plot_data$Actual_Log_Duration)
+  max_value <- max(plot_data$Predicted_Log_Duration, plot_data$Actual_Log_Duration)
+  
+  # Add a trend line to see if there are systematic deviations
+  ggplot(plot_data, aes(x = Predicted_Log_Duration, y = Actual_Log_Duration)) +
+    geom_point(alpha = 0.5) +
+    geom_abline(slope = 1, intercept = 0, color = "red", linetype = "dashed") +
+    geom_smooth(method = "lm", color = "blue") +  # Add a smooth trend line
+    labs(
+      title = "Actual vs. Predicted Log Duration with Trend Line",
+      x = "Predicted Log Duration",
+      y = "Actual Log Duration"
+    ) +
+    theme_minimal() +
+    coord_fixed(ratio = 1) + # Set the aspect ratio to 1:1
+    xlim(min_value, max_value) +  # Set x-axis limits from min to max
+    ylim(min_value, max_value)    # Set y-axis limits from min to max
+} 
+
+get_robust_se <- function(model, df){
+  
+  robust_se <- vcovCR(model, cluster = df$ID, type = "CR2")
+  summary_robust <- coef_test(model, vcov = robust_se)
+  
+  print(summary_robust)
+}
+
+
+random_effects_diagnostics <- function(model, effect_name = "a") {
+  # Extract all random effects
+  random_effects <- ranef(model)
+
+#Check for the random effect column name
+  if (!effect_name %in% colnames(random_effects)) {
+    stop(paste("Effect", effect_name, "not found. Available effects are:",
+               paste(colnames(random_effects), collapse = ", ")))
+  }
+
+#Extract the specified random effect
+  effect_values <- random_effects[, effect_name]
+
+#Q-Q plot for the random effect
+  qqnorm(effect_values, 
+         main = paste("Q-Q Plot for Random Effect:", effect_name), 
+         pch = 20, col = "blue")
+  qqline(effect_values, col = "red", lty = 2)
+
+#Return the random effect values for further use
+  return(effect_values)
+}
+
+```
+
+## Base model: Only order
+
+```{r base model}
+# base model
+model1<- lmer(log_duration ~ Order_standardized + (1 | ID), data = df)
+
+get_robust_se(model1, df)
+```
+
+We use standardized order since, when using squared order later as specification, the number of order^2 can get very big.
+
+```{r base model}
+# base model
+model1<- lmer(log_duration ~ Order_standardized + (1 | ID), data = df)
+print(r2(model1))
+model2 <- lmer(log_duration ~ Order_standardized  + I(Order_standardized^2) + (1 | ID), data = df)
+print(r2(model2))
+anova(model1, model2)
+
+
+model3 <- lmer(log_duration ~ Order_standardized + I(Order_standardized^2) + ColorCategory + Saturation_std + Brightness_std + (1 | ID), data = df)
+print(r2(model3))
+anova(model2, model3)
+
+model4 <- lmer(log_duration ~ Order_standardized  + I(Order_standardized^2) + ColorCategory + Saturation_std + Brightness_std + ROI + (1 | ID), data = df)
+anova(model3, model4)
+print(r2(model4))
+
+model5 <- lmer(log_duration ~ Order_standardized  + I(Order_standardized^2) + ColorCategory + Saturation_std + Brightness_std + ROI + Gender + Age_Group_Cluster + (1 | ID), data = df)
+print(r2(model5))
+anova(model4, model5)
+
+get_robust_se(model5, df)
+
+
+```
+Order has a significant positive effect on log duration. This result also holds if we use standard errors that are robust against heteroscedasticity. Also, the SD of the random intercept for ID (0.12) suggests that the random effect of each participant explains a moderate amount of the variation in log duration, but there is still a lot unexplained by the model.
+
+R2m (marginal r-squared), is the effect size without considering the random effects (i.e., where the model is built without regard to participant differences). The second, R^2c (conditional r-squared) is the effect size when the random effects are taken into account. Accordingly, the R^2c values are aways higher than the R^2m values (unless there are little/no random effects).
+
+Random effects explain a lot more of the variance in log duration than without. But it is still not a lot, with only about 4.7%.
+
+```{r base model plot residuals}
+plot_residuals(model1)
+
+random_effects <- ranef(model1)
+# Load the lattice package
+library(lattice)
+# Generate QQ plots for random effects
+qqmath(random_effects)
+dotplot(random_effects)
+
+```
+
+Arguably roughly normal, but the residuals show signs of heteroscedasticity and also actual vs predicted suggests that linearity assumption might not hold well. This model kinda predicts log durations around the mean.
+
+Now we will increase complexity of the model and look if it significantly improves the fit. Since we have concerns about heteroscedasticity, we will also use robust estimates.
+
+To compare the fits of two models, you can use the anova() function with the regression objects as two separate arguments. The anova() function will take the model objects as arguments, and return an ANOVA testing whether the more complex model is significantly better at capturing the data than the simpler model. If the resulting p-value is sufficiently low (usually less than 0.05), we conclude that the more complex model is significantly better than the simpler model, and thus favor the more complex model. If the p-value is not sufficiently low (usually greater than 0.05), we should favor the simpler model.
+
+source: https://bookdown.org/ndphillips/YaRrr/comparing-regression-models-with-anova.html
+
+
+```{r order^2}
+# added Order^2
+model2 <- lmer(log_duration ~ Order + I(Order^2) + (1 | ID), data = df)
+#summary(model2)
+#parameters(model2)
+get_robust_se(model2, df)
+
+print(r2(model2))
+
+# test improvement
+anova(model1, model2) 
+```
+
+Order^2 has a significant negative effect on duration, i.e., order first increases duration but eventually decreases it. Also, the model with order^2 has a significantly better fit than without.
+The added Order^2 is able to explain more than the base model (higher R^2m), but the R^2c is a little less than before. Probably because the effect of Order^2 was attributed to random effects before.
+
+```{r ROI}
+# add ROI and ROI area 
+model_roi<- lmer(log_duration ~ Order_standardized + I(Order_standardized^2) + ROI + (1 | ID), data = df)
+#summary(model_roi)
+#parameters(model_roi)
+get_robust_se(model_roi, df)
+print(r2(model_roi))
+
+anova(model2, model_roi)
+
+#plot_residuals(model_roi)
+```
+Some ROIs are significant, and the ANOVA test suggest that including ROI leads to a better fit. ROI area not significant.
+
+```{r other models}
+# add RGB values
+model3<- lmer(log_duration ~ Order_standardized + I(Order_standardized^2) + ColorCategory + Saturation_std + Brightness_std + (1 | ID), data = df)
+#summary(model3)
+#parameters(model3)
+get_robust_se(model3, df)
+print(r2(model3))
+
+anova(model2, model3)
+vif(model3)
+```
+
+Also adding HSV values lead to a better fit than without.
+
+```{r other models 2}
+# ROI and RGB
+model4<- lmer(log_duration ~ Order_standardized + I(Order_standardized^2) + ROI + ColorCategory + Saturation_std + Brightness_std + (1 | ID), data = df)
+#summary(model4)
+#parameters(model4)
+get_robust_se(model4, df)
+print(r2(model4))
+
+anova(model_roi, model4)
+```
+
+Adding HSV values leads to better fit than without compared to ROI model. 
+
+```{r other models 3}
+# ROI and RGB, add Gender and Age Groups
+model5<- lmer(log_duration ~ Order + I(Order^2) + ColorCategory + Saturation_std + Brightness_std + Gender + Age_Group_Cluster + ROI + (1 | ID), data = df)
+#summary(model4)
+#parameters(model5)
+#get_robust_se(model5, df)
+#print(r2(model5))
+
+#anova(model4, model5)
+
+#vif(model5)
+
+plot_residuals(model5)
+
+random_effects <- ranef(model5)
+# Load the lattice package
+library(lattice)
+# Generate QQ plots for random effects
+qqmath(random_effects)
+#dotplot(random_effects)
+```
+
+```{r full model}
+library(checkmate)
+library(cowplot)
+library(ggplot2)
+library(purrr)
+library(tidyr)
+library(qqplotr)
+
+#
+
+plot_ranef <- function(model){
+
+  # Return an error if an acceptable model type is not entered in the function
+  checkmate::expect_class(model, "lmerMod",
+                          info = "The input model is not accepted by plot_raneff. Model must be fit using 'lmer'.")
+
+  # building dataframe of all random effects
+  bmat <- as.data.frame(lme4::ranef(model))
+
+  # converting each random effect vector into one line with nest
+  renest <- tidyr::nest(bmat, data = c("grp", "condval", "condsd"))
+
+  # generating list of ggplot objects for each random effect vector
+  plots <- purrr::pmap(list(renest$data, renest$grpvar, renest$term),
+                          function(a,b,c){
+                            ggplot(data = a, aes_string(sample = "condval")) +
+                              qqplotr::stat_qq_band(bandType = "pointwise",
+                                                    distribution = "norm",
+                                                    fill = "#FBB4AE", alpha = 0.4) +
+                              qqplotr::stat_qq_line(distribution = "norm", colour = "#FBB4AE") +
+                              qqplotr::stat_qq_point(distribution = "norm") +
+                              xlab("Normal quantiles") + theme_bw() +
+                              ylab(paste(b,": ", c)) +
+                              ggtitle('Q-Q plot of the random effect') + 
+                              theme(plot.title = element_text(hjust = 0.5))
+                          }
+  )
+
+  # Create grid of all random effect plots
+  cowplot::plot_grid(plotlist = plots)
+}
+
+plot_ranef(model5)
+```
+
+
+
+Does not lead to a better model fit. Gender and Age Groups are also not insignificant.
+
+```{r full model}
+# ROI and RGB, add Gender and Age Groups, and interactions
+model_full<- lmer(log_duration ~ Order_standardized + I(Order_standardized^2) + ColorCategory + Saturation_std + Brightness_std + Gender + Age_Group_Cluster + ROI + I(Order_standardized^2)*Age_Group_Cluster + (1 | ID), data = df)
+
+parameters(model_full)
+get_robust_se(model_full, df)
+print(r2(model_full))
+
+anova(model5, model_full)
+vif(model_full)
+```
+
+Significant better fit, interactions of order^2 and age group are positively significant, i.e., for 46-59 the decrease of log duration with higher order is flatter/less pronounced than for 5-17. RGB values are significant, and also some ROI and Age Group interactions.
+
+
+
+```{r other models 2.2, echo=FALSE}
+df$predicted_log_duration <- predict(model4, re.form = NA)  # Predicted values ignoring random effects
+
+mean_predicted_df <- df %>%
+  group_by(Order, Age_Group_Cluster) %>%
+  summarize(mean_predicted_log_duration = mean(predicted_log_duration, na.rm = TRUE), .groups = "drop")
+
+ggplot(mean_predicted_df, aes(x = Order, y = mean_predicted_log_duration, color = Age_Group_Cluster)) +
+  geom_line(size = 1) +                   # Use lines to indicate trend
+  geom_point(alpha = 0.6) +               # Add points for individual means
+  labs(title = "Predicted Log Fixation Duration vs. Order for All Age Groups",
+       x = "Order",
+       y = "Predicted Log Fixation Duration",
+       color = "Age Group") +
+  theme_minimal() +                       # Use a clean, minimal theme
+  theme(legend.position = "bottom")       # Place legend at the bottom
+```
+
+
+## Looking at specific age clusters
+
+```{r other models 3}
+# Split the dataset by age group 
+df$age_std <- scale(df$age)
+
+df_5_17 <- subset(df, Age_Group_Cluster == "5-18")
+df_18_26 <- subset(df, Age_Group_Cluster == "19-26")
+df_27_35 <- subset(df, Age_Group_Cluster == "27-35")
+df_36_45 <- subset(df, Age_Group_Cluster == "36-45")
+df_46_59 <- subset(df, Age_Group_Cluster == "46-59")
+
+# Age Group 5-17
+model_5_17 <- lmer(log_duration ~ Order_standardized + I(Order_standardized^2) + age_std +  Gender  + ROI + ColorCategory + Saturation_std + Brightness_std + (1 | ID), data = df_5_17)
+# Age Group 18-26
+model_18_26 <- lmer(log_duration ~ Order_standardized + I(Order_standardized^2) + age_std + Gender + ROI + ColorCategory + Saturation_std + Brightness_std  + (1 | ID), data = df_18_26)
+# Age Group 27-35
+model_27_35 <- lmer(log_duration ~ Order_standardized + I(Order_standardized^2) + age_std + Gender + ROI + ColorCategory + Saturation_std + Brightness_std + (1 | ID), data = df_27_35)
+# Age Group 36-45
+model_36_45 <- lmer(log_duration ~ Order_standardized + I(Order_standardized^2) + age_std + Gender  + ROI + ColorCategory + Saturation_std + Brightness_std  + (1 | ID), data = df_36_45)
+# Age Group 46-59
+model_46_59 <- lmer(log_duration ~ Order_standardized + I(Order_standardized^2) + age_std + Gender  + ROI + ColorCategory + Saturation_std + Brightness_std  + (1 | ID), data = df_46_59)
+
+get_robust_se(model_5_17, df_5_17)
+get_robust_se(model_18_26, df_18_26)
+get_robust_se(model_27_35, df_27_35)
+get_robust_se(model_36_45, df_36_45)
+get_robust_se(model_46_59, df_46_59)
+
+print(r2(model_5_17))
+print(r2(model_18_26))
+print(r2(model_27_35))
+print(r2(model_36_45))
+print(r2(model_46_59))
+
+
+```
+
+
+For the age group 5-17, there is a significant (5%) negative effect of age on log duration. For the age group 46-59 this effect is positive, but not statistically significant. Also for the other age groups, age is not significant. Age group 18-26 is the only group, where GenderMALE is significant (5%), having a lower mean log duration than females.
+
+```{r plots, echo=FALSE}
+
+# Plot for the youngest age group (5-17)
+ggplot(df_5_17, aes(x = age, y = log_duration)) +
+  geom_point(alpha = 0.5, color = "blue") +
+  geom_smooth(method = "lm", color = "darkblue", se = FALSE) +
+  labs(title = "Age vs Log Fixation Duration (Age Group 5-17)",
+       x = "Age",
+       y = "Log Fixation Duration") +
+  theme_minimal()
+
+# Plot for the oldest age group (46-59)
+ggplot(df_46_59, aes(x = age, y = log_duration)) +
+  geom_point(alpha = 0.5, color = "red") +
+  geom_smooth(method = "lm", color = "darkred", se = FALSE) +
+  labs(title = "Age vs Log Fixation Duration (Age Group 46-59)",
+       x = "Age",
+       y = "Log Fixation Duration") +
+  theme_minimal()
+
+# Combine both datasets
+df_combined <- rbind(df_5_17, df_46_59)
+
+```
+
+## Summary:
+Order is significantly positive and order^2 significantly negative: Fixations become longer at first but then at a certain point (fixation order) become shorter again.
+
+The age clusters were not significantly affecting the duration in the full model, but the interaction with order^2, i.e., for older participants, the decrease in fixation duration over time was flatter. 
+Looking at the individual age clusters, only for 5-17 age was significant predictor, showing a decrease in fixation duration with increasing age.
+
+Gender was mostly insignificant, only for the cluster 18-26, where males have a shorter average log duration fixation.
+
+BUT: Model seems to explain very little of the total variation in log fixation duration. We miss key predictors, order, age and gender alone are not enough.
+
+
+
