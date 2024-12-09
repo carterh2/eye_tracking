@@ -200,8 +200,8 @@ def run_post_processing() -> pd.DataFrame:
 
     # generate dummy variables
     age_dummies = pd.get_dummies(
-        result['Age_Group_Cluster'], prefix='Age', drop_first=True).astype(int)
-
+        result['Age_Group_Cluster'], prefix='Age', drop_first=False).astype(int)
+    age_dummies = age_dummies.drop(columns=['Age_5-18'])
     # attach dummies to data frame
     result = pd.concat([result, age_dummies], axis=1)
     print("\tgenerating log duration...")
