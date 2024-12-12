@@ -25,7 +25,7 @@ df <- read.csv("./results/post_processed_data.csv")
 
 # Reorder Age_Group_Cluster such that "5-18" is the first group
 df$Age_Group_Cluster <- factor(df$Age_Group_Cluster,
-                               levels = c("46-59", "19-26", "27-35", "36-45", "5-18"))
+                               levels = c("5-18", "19-26", "27-35", "36-45", "46-59"))
 
 
 df$Order_standardized <- (df$Order - mean(df$Order))/sd(df$Order)
