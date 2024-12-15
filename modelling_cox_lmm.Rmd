@@ -1,12 +1,12 @@
 ---
-title: 'Modelling: LMM'
+title: 'Modelling: Cox and LMM'
 output:
   html_document: default
   pdf_document: default
 date: "`r Sys.Date()`"
 ---
 
-## Modelling
+## Data prep
 
 ```{r library and df, results = 'hide'}
 setwd("C:/Users/ekaba/0 Uni TUDO/Case Studies/eye_tracking")
@@ -20,6 +20,9 @@ library(performance)
 library(car)
 library(colorspace)
 library(lmerTest)
+library(survival)
+library(coxme)
+library(survminer)
 
 df <- read.csv("./results/post_processed_data.csv")
 
@@ -27,8 +30,8 @@ df <- read.csv("./results/post_processed_data.csv")
 df$Age_Group_Cluster <- factor(df$Age_Group_Cluster,
                                levels = c("5-18", "19-26", "27-35", "36-45", "46-59"))
 
-
-df$Order_standardized <- (df$Order - mean(df$Order))/sd(df$Order)
+df$Order_sq <- (df$Order)**2
+df$Order_standardized <- scale(df$Order)
 
 #df <- df %>%
 # filter(duration < 1.5) #test
@@ -73,11 +76,79 @@ df$ColorCategory <- cut(
 # Convert to factor
 df$ColorCategory <- factor(df$ColorCategory)
 
-#df <- df %>% 
-#  filter(Valid == 'True')
+df$age_std <- scale(df$age)
+
+df$event <- 1 # for cox
 
 ```
 
+# Cox Regression
+
+```{r cox}
+model_1 <- coxph(Surv(duration, event) ~ Order_standardized, data = df)
+concordance(model_1)
+model_2 <- coxph(Surv(duration, event) ~ Order_standardized + I(Order_standardized^2), data = df)
+concordance(model_2)
+anova(model_1, model_2)
+
+model_3 <- coxph(Surv(duration, event) ~ Order_standardized + I(Order_standardized^2) + ColorCategory + Brightness_std + Saturation_std, data = df)
+concordance(model_3)
+anova(model_2, model_3)
+
+model_4 <- coxph(Surv(duration, event) ~ Order_standardized + I(Order_standardized^2) + ROI + ColorCategory + Brightness_std + Saturation_std + ROI, data = df)
+concordance(model_4)
+anova(model_3, model_4)
+
+
+model_5 <- coxph(Surv(duration, event) ~ Order_standardized + I(Order_standardized^2) + ROI + ColorCategory + Brightness_std + Saturation_std + Age_Group_Cluster , data = df)
+concordance(model_5)
+anova(model_4, model_5)
+
+model_final <- coxph(Surv(duration, event) ~ Order_standardized + I(Order_standardized^2) + ROI + ColorCategory + Brightness_std + Saturation_std + Age_Group_Cluster + Gender, data = df)
+concordance(model_final)
+anova(model_5, model_final)
+
+
+model_final_int <- coxph(Surv(duration, event) ~ Order_standardized + I(Order_standardized^2) + ROI + ColorCategory + Brightness_std + Saturation_std + Age_Group_Cluster + Gender + Age_Group_Cluster*Order_standardized + Age_Group_Cluster*I(Order_standardized^2), data = df)
+vif(model_final_int) # bad
+
+
+```
+
+# Mixed Effects Cox Model
+```{r cox}
+model <- coxme(Surv(duration, event) ~ Order_standardized + I(Order_standardized^2) + Age_Group_Cluster + Gender + ROI + ColorCategory + Brightness_std + Saturation_std +  (1 | ID), data = df)
+
+model
+
+# Check proportional hazards assumption
+test.ph <- cox.zph(model)
+test.ph
+ggcoxzph(test.ph)
+
+```
+# Age Cox
+
+```{r cox age}
+df_5_18 <- subset(df, Age_Group_Cluster == "5-18")
+df_19_26 <- subset(df, Age_Group_Cluster == "19-26")
+df_27_35 <- subset(df, Age_Group_Cluster == "27-35")
+df_36_45 <- subset(df, Age_Group_Cluster == "36-45")
+df_46_59 <- subset(df, Age_Group_Cluster == "46-59")
+
+cox_5_18 <- coxme(Surv(duration, event) ~ Order + I(Order_standardized^2) + age_std + Gender + ROI + ColorCategory + Brightness_std + Saturation_std + (1 | ID), data = df_5_18)
+
+cox_19_26 <- coxme(Surv(duration, event) ~ Order + I(Order_standardized^2) + age_std + Gender + ROI + ColorCategory + Brightness_std + Saturation_std + (1 | ID), data = df_19_26)
+
+cox_27_35 <- coxme(Surv(duration, event) ~ Order + I(Order_standardized^2) + age_std + Gender + ROI + ColorCategory + Brightness_std + Saturation_std + (1 | ID), data = df_27_35)
+
+cox_36_45 <- coxme(Surv(duration, event) ~ Order + I(Order_standardized^2) + age_std + Gender + ROI + ColorCategory + Brightness_std + Saturation_std + (1 | ID), data = df_36_45)
+
+cox_46_59 <- coxme(Surv(duration, event) ~ Order + I(Order_standardized^2) + age_std + Gender + ROI + ColorCategory + Brightness_std + Saturation_std + (1 | ID), data = df_46_59)
+
+```
+
+# Functions for plots LMM
 
 ```{r functions, echo=FALSE}
 plot_residuals <- function(model){
@@ -156,9 +227,14 @@ random_effects_diagnostics <- function(model, effect_name = "a") {
   return(effect_values)
 }
 
+df$Age_Group_Cluster <- as.factor(df$Age_Group_Cluster)
+df$Gender <- as.factor(df$Gender)
+df$ROI <- as.factor(df$ROI)
+df$ID <- as.factor(df$ID)
+
 ```
 
-We use standardized order since, when using squared order later as specification, the number of order^2 can get very big.
+# LMM
 
 ```{r models}
 # base model
@@ -177,40 +253,25 @@ model4 <- lmer(log_duration ~ Order_standardized  + I(Order_standardized^2) + Co
 anova(model3, model4)
 print(r2(model4))
 
-model5 <- lmer(log_duration ~ Order_standardized  + I(Order_standardized^2) + ColorCategory + Saturation_std + Brightness_std + ROI + Gender + Age_Group_Cluster + (1 | ID), data = df)
+model5 <- lmer(log_duration ~ Order_standardized  + I(Order_standardized^2) + ColorCategory + Saturation_std + Brightness_std + ROI + Age_Group_Cluster + (1 | ID), data = df)
 print(r2(model5))
 anova(model4, model5)
+
+modelfinal <- lmer(log_duration ~ Order_standardized  + I(Order_standardized^2) + ColorCategory + Saturation_std + Brightness_std + ROI + Age_Group_Cluster + Gender + (1 | ID), data = df)
+print(r2(model5))
+anova(model5, modelfinal)
 
 get_robust_se(model5, df)
 ```
 
-Order has a significant positive effect on log duration. This result also holds if we use standard errors that are robust against heteroscedasticity. Also, the SD of the random intercept for ID (0.12) suggests that the random effect of each participant explains a moderate amount of the variation in log duration, but there is still a lot unexplained by the model.
 
-R2m (marginal r-squared), is the effect size without considering the random effects (i.e., where the model is built without regard to participant differences). The second, R^2c (conditional r-squared) is the effect size when the random effects are taken into account. Accordingly, the R^2c values are aways higher than the R^2m values (unless there are little/no random effects).
-
-Random effects explain a lot more of the variance in log duration than without. But it is still not a lot, with only about 4.7%.
 
 ```{r final model plot residuals}
 plot_residuals(model5)
 vif(model5)
 ```
 
-Arguably roughly normal, but the residuals show signs of heteroscedasticity and also actual vs predicted suggests that linearity assumption might not hold well. This model kinda predicts log durations around the mean.
-
-Now we will increase complexity of the model and look if it significantly improves the fit. Since we have concerns about heteroscedasticity, we will also use robust estimates.
-
-To compare the fits of two models, you can use the anova() function with the regression objects as two separate arguments. The anova() function will take the model objects as arguments, and return an ANOVA testing whether the more complex model is significantly better at capturing the data than the simpler model. If the resulting p-value is sufficiently low (usually less than 0.05), we conclude that the more complex model is significantly better than the simpler model, and thus favor the more complex model. If the p-value is not sufficiently low (usually greater than 0.05), we should favor the simpler model.
-
-source: https://bookdown.org/ndphillips/YaRrr/comparing-regression-models-with-anova.html
-
-Order^2 has a significant negative effect on duration, i.e., order first increases duration but eventually decreases it. Also, the model with order^2 has a significantly better fit than without.
-The added Order^2 is able to explain more than the base model (higher R^2m), but the R^2c is a little less than before. Probably because the effect of Order^2 was attributed to random effects before.
-
-Some ROIs are significant, and the ANOVA test suggest that including ROI leads to a better fit. ROI area not significant.
-
-Also adding HSV values lead to a better fit than without.
-
-Adding HSV values leads to better fit than without compared to ROI model. 
+# Normality of RE
 
 ```{r normality of random effects}
 library(checkmate)
@@ -256,7 +317,7 @@ plot_ranef(model5)
 ```
 Code from https://rdrr.io/github/goodekat/redres/src/R/plot_ranef.R
 
-## Looking at specific age clusters
+# Looking at specific age clusters
 
 ```{r other models 3}
 # Split the dataset by age group 
@@ -295,42 +356,8 @@ print(r2(model_46_59))
 ```
 
 
-For the age group 5-18, there is a significant (10%) negative effect of age on log duration. Also for the other age groups, age is not significant. Age group 18-26 is the only group, where GenderMALE is significant (5%), having a lower mean log duration than females.
 
-```{r plots, echo=FALSE}
 
-# Plot for the youngest age group (5-18)
-ggplot(df_5_18, aes(x = age, y = log_duration)) +
-  geom_point(alpha = 0.5, color = "blue") +
-  geom_smooth(method = "lm", color = "darkblue", se = FALSE) +
-  labs(title = "Age vs Log Fixation Duration (Age Group 5-18)",
-       x = "Age",
-       y = "Log Fixation Duration") +
-  theme_minimal()
-
-# Plot for the oldest age group (46-59)
-ggplot(df_46_59, aes(x = age, y = log_duration)) +
-  geom_point(alpha = 0.5, color = "red") +
-  geom_smooth(method = "lm", color = "darkred", se = FALSE) +
-  labs(title = "Age vs Log Fixation Duration (Age Group 46-59)",
-       x = "Age",
-       y = "Log Fixation Duration") +
-  theme_minimal()
-
-# Combine both datasets
-df_combined <- rbind(df_5_18, df_46_59)
-
-```
-
-## Summary:
-Order is significantly positive and order^2 significantly negative: Fixations become longer at first but then at a certain point (fixation order) become shorter again.
-
-The age clusters were not significantly affecting the duration in the full model
-Looking at the individual age clusters, only for 5-18 age was 'significant' predictor, showing a decrease in fixation duration with increasing age. But weak significance.
-
-Gender was mostly insignificant, only for the cluster 18-26, where males have a shorter average log duration fixation.
-
-BUT: Model seems to explain very little of the total variation in log fixation duration. We miss key predictors, order, age and gender, ROIs, HSB alone are not enough. 
 
 
 
