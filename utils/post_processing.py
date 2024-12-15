@@ -109,7 +109,7 @@ def categorize_hue(hue):
         return "Invalid hue value. It must be between 0 and 360."
 
     # Use modulo 360 to handle hue wraparound, ensuring hue stays in [0, 360)
-    hue %= 360
+    # hue %= 360
 
     # Categorize hue into colors
     if hue <= 60:
@@ -143,9 +143,11 @@ def get_pix_hsb(row, image, type="color", width = 1920, height = 1080):
     elif type == "b":
         ind = 2
     if (x >= 0 and x <= width) and (y >= 0 and y<= height): 
-        value = image[x-1, y-1][ind]
+        value = image.getpixel((x - 1,y - 1))[ind]
         if type == "color":
-            value = categorize_hue(value)
+            hue = value * (360/255)
+            color = categorize_hue(hue)
+            return color
         return value
 
 def get_pix_spectral(row, image, col="r"):
@@ -179,7 +181,7 @@ def run_post_processing() -> pd.DataFrame:
     # Filter out participants with only "valid demographics"
     result = df.loc[(df['age'] >= 5) & (df['age'] <= 59) & (df['DoB'] != 2000) & (
         df['Gender'] != "OTHER") & (df['duration'] > 0.06) & (df['duration'] < 2)
-        & (df["Valid"] == True), :].copy()
+        & (df["Valid"] == True) & (df["Valid Freeviewing"] == True), :].copy()
     
     print("\trunning age binning clustering...")
     # Utilize K-Means Clustering to bin ages
@@ -239,7 +241,7 @@ def run_post_processing() -> pd.DataFrame:
     result["rgb_diff_euclidean"] = np.sqrt(result.red_diff**2 + result.green_diff**2 + result.blue_diff**2)
     
     print("\tcreating color, saturation and brightness values...")
-    stim = stim.convert("HSV").load()
+    stim = stim.convert("HSV")
     result["Color"] = result.apply(lambda row: get_pix_hsb(row, stim), axis=1)
     result["Saturation"] = result.apply(lambda row: get_pix_hsb(row, stim, type="s"), axis=1)
     result["Brightness"] = result.apply(lambda row: get_pix_hsb(row, stim, type="b"), axis=1)
