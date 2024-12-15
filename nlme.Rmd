@@ -1,0 +1,608 @@
+---
+title: "Non-Linear Mixed Effects"
+author: "Carter Hogan"
+date: "11/17/2024"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+# attach relevant libraries
+library(nlme)
+library(dplyr)
+# read in csv of data
+# set working directory
+setwd('C:/Users/chica/OneDrive/Documents/Case Studies/eye_tracking/results')
+# read in the data
+df <- read.csv('post_processed_data.csv')
+# create a log variable for Order
+df$Order_log <- log(df$Order + 1)
+df$ROI_area <- ifelse(is.na(df$ROI_area), 0, df$ROI_area)
+df$ROI_area <- scale(ifelse(is.na(df$ROI_area), 0, df$ROI_area))
+```
+
+## Empirical Distribution of Duration
+
+First we visually inspect a series of plausible distributions for duration
+```{r Empirical CDF of duration}
+library(fitdistrplus)
+duration <- df$duration
+# Fit multiple distributions
+fit_normal <- fitdist(duration, "norm")
+fit_lognormal <- fitdist(duration, "lnorm")
+fit_gamma <- fitdist(duration, "gamma")
+fit_exponential <- fitdist(duration, "exp")
+
+# Compare the fitted models
+summary(fit_normal)
+summary(fit_lognormal)
+summary(fit_gamma)
+summary(fit_exponential)
+
+# Plot the fits
+plot(fit_normal)
+plot(fit_lognormal)
+plot(fit_gamma)
+plot(fit_exponential)
+```
+The above plots suggest that duration is log-normally distributed, or at least the 
+most similar to a log-normal distribution
+
+#Plot Comparisons
+We prepare another visual inspection comparing all plausible distributions
+
+```{r Plot Comparisons}
+# Assuming 'duration' is your data vector
+ecdf_data <- ecdf(duration)
+
+# Plot the ECDF
+plot(ecdf_data, main = "Empirical CDF of Duration", xlab = "Duration", ylab = "ECDF")
+# Plot ECDF
+plot(ecdf_data, main = "ECDF vs Fitted CDFs", xlab = "Duration", ylab = "ECDF", col = "black", lwd = 2)
+
+# Add the fitted CDFs to the ECDF plot
+curve(pnorm(x, mean = fit_normal$estimate[1], sd = fit_normal$estimate[2]), 
+      col = "red", lwd = 2, add = TRUE)
+curve(plnorm(x, meanlog = fit_lognormal$estimate[1], sdlog = fit_lognormal$estimate[2]), 
+      col = "green", lwd = 2, add = TRUE)
+curve(pgamma(x, shape = fit_gamma$estimate[1], rate = fit_gamma$estimate[2]), 
+      col = "purple", lwd = 2, add = TRUE)
+curve(pexp(x, rate = fit_exponential$estimate[1]), 
+      col = "orange", lwd = 2, add = TRUE)
+
+# Add a legend to label the lines
+legend("bottomright", 
+       legend = c("ECDF", "Normal", "Log-Normal", "Gamma", "Exponential"),
+       col = c("black", "red", "green", "purple", "orange"), 
+       lwd = 2)
+```
+This reaffirms that duration appears to be log-normally distributed
+# Goodness of fit
+```{r Goodness of fit}
+# Kolmogorov-Smirnov test for log-normality
+log_mean <- mean(log(duration))  # Mean of the log-transformed data
+log_sd <- sd(log(duration))      # Standard deviation of the log-transformed data
+
+ks_test_log_normal <- ks.test(duration, "plnorm", meanlog = log_mean, sdlog = log_sd)
+print(ks_test_log_normal)
+
+# Anderson-Darling test for log-normality
+library(nortest)
+ad_test_log_normal <- ad.test(log(duration))  # Apply AD test to the log-transformed data
+print(ad_test_log_normal)
+
+```
+The statistical tests do not validate this hypothesis, however we use this as the best practical fit for the data because of the visual match
+
+## Non-Linear Mixed Effects
+# First we run a simple linear model for better initial values
+
+```{r Simple Linear Model}
+# Fit linear model (this approximates the nonlinear relationship)
+linear_model <- lm(log_duration ~ Order_log, data = df)
+
+# Use the coefficients of the linear model as starting values
+a_start <- coef(linear_model)[1]  # Intercept
+b_start <- -coef(linear_model)[2]  # Negative slope for decay model
+
+# Print the estimated starting values
+cat("Initial values: a =", a_start, "b =", b_start, "\n")
+
+```
+
+## Non-linear Mixed Effects Model (simple)
+We decided to use a logarithmic decay function for Order based on the scatter plots of the relationship between Order and Fixation Duration outlined in our EDA
+```{r simple}
+
+model_simple <- nlme(
+  log_duration ~ a - b * Order_log,
+  fixed = a + b ~1,            # Intercept-only fixed effects
+  random = a + b ~ 1 | ID,
+  start = c(a_intercept = 100,            # Initial value for a's intercept
+            b_intercept = 10),
+  data = df
+)
+
+
+summary(model_simple)
+```
+From the output above, we find that the parameters a and b are both statistically significant, this model suggests that the baseline duration is	-1.6612233 and the decay rate is -0.0526516
+We evaluate a more complex model to ensure that all variables have been properly accounted for.
+
+## Non-linear Mixed Effects Model (Age and Gender)
+Now using age and gender as fixed effects we re-estimate the NLME model.
+```{r age and gender}
+
+model_age_gender <- nlme(
+  log_duration ~ a - b * Order_log,
+  fixed = a + b ~ age +female,            # Intercept-only fixed effects
+  random = a + b ~ 1 | ID,
+  start = c(a_intercept = -1.642777,            # Initial value for a's intercept
+            b_intercept = -0.04070717,             # Initial value for b's intercept
+            a_age = 0,                    # Initial value for age effect on a
+            b_age = 0,                    # Initial value for age effect on b
+            a_female = 0,                 # Initial value for female effect on a
+            b_female = 0),
+  data = df
+)
+
+summary(model_age_gender)
+```
+The parameters for Order_log remain statistically significant and do not vary much in value relative to the initial model. A baseline of -1.6589026 and a decay rate of -0.0532130. Since the p-values of the parameters for age and gender are not statistically significant, the model suggests they do not contribute much to explaining the variation in fixation duration. 
+
+## Non-linear Mixed Effects Model (Age, Gender and ROI)
+
+Using now the ROI_area metric that accounts for the size of the ROI belonging to each fixation, we re-estimate the NLME model. 
+
+```{r age, gender and ROI}
+
+model_roi <- nlme(
+  log_duration ~ a - b * Order_log,
+  fixed = a + b ~ age +female + ROI_area,            # Intercept-only fixed effects
+  random = a + b ~ 1 | ID,
+  start = c(a_intercept = -1.642777,            # Initial value for a's intercept
+            b_intercept = -0.04070717,             # Initial value for b's intercept
+            a_age = 0,                    # Initial value for age effect on a
+            b_age = 0,                    # Initial value for age effect on b
+            a_female = 0,                 # Initial value for female effect on a
+            b_female = 0,
+            a_roi_area = 0,
+            b_roi_area = 0),
+  data = df
+)
+
+summary(model_roi)
+```
+The parameters for ROI_are are not statistically significant at the 0.05 level, and no other parameters change drastically, we still have a similar baseline of -1.6584436 and a decay rate of -0.0526163.
+This suggests that the model is not improved by adding these additional variables, therefore we choose to evaluate the simpler model in terms of goodness of fit. 
+
+
+```{r resid 1}
+# Simple plot of residuals vs. predicted values
+plot(fitted(model_simple), resid(model_simple))
+# Histogram of Residuals
+hist(resid(model_simple))
+# QQ plot 
+qqnorm(resid(model_simple))
+qqline(resid(model_simple))
+```
+We notice that the residuals show signs of heteroscedasticity and we add a variance function to the analysis to fix this. The Histogram appears to be normally distributed with a minor skewness right. The QQ- plot also suggest that the residuals are roughly normal with minor skewness on the left tail.
+
+# Adjustments for Heteroscedasticity (Parallelized Approach Split on Age Cluster)
+```{r parallel}
+library(foreach)
+library(doParallel)
+num_cores <- detectCores() - 1  # Use one less than the number of cores
+cl <- makeCluster(num_cores)  # Create a cluster with the desired number of cores
+registerDoParallel(cl) 
+df_clean <- na.omit(df[, c("log_duration", "Order_log", "ID", "Age_Group_Cluster")])
+# Assuming your data is divided into multiple subsets for parallel fitting
+
+```
+```{r result split}
+subsets <- split(df_clean, df_clean$Age_Group_Cluster)  # Split data by region, or any other grouping factor
+
+# Parallelize model fitting using foreach
+results <- foreach(subset = subsets, .packages = c("nlme")) %dopar% {
+  model <- nlme(
+    log_duration ~ a - b * Order_log,
+    fixed = a + b ~ 1,
+    random = a + b ~ 1 | ID,
+    start = c(a_intercept = -1.642777,            # Initial value for a's intercept
+            b_intercept = -0.04070717),
+    data = subset,
+    weights = varPower(),
+    control = nlmeControl(maxIter = 200, msMaxIter = 200)
+  )
+  return(model)
+}
+
+```
+```{r Summaries}
+summary(results[[1]])
+summary(results[[2]])
+summary(results[[3]])
+summary(results[[4]])
+summary(results[[5]])
+
+```
+
+# Model 1
+```{r model 1}
+# Model 1
+# Simple plot of residuals vs. predicted values
+plot(fitted(results[[1]]), resid(results[[1]]))
+# Histogram of Residuals
+hist(resid(results[[1]]))
+# QQ plot 
+qqnorm(resid(results[[1]]))
+qqline(resid(results[[1]]))
+```
+
+# Model 2
+```{r model 2}
+# Model 1
+# Simple plot of residuals vs. predicted values
+plot(fitted(results[[2]]), resid(results[[2]]))
+# Histogram of Residuals
+hist(resid(results[[2]]))
+# QQ plot 
+qqnorm(resid(results[[2]]))
+qqline(resid(results[[2]]))
+```
+
+# Model 3
+```{r model 3}
+# Model 1
+# Simple plot of residuals vs. predicted values
+plot(fitted(results[[3]]), resid(results[[3]]))
+# Histogram of Residuals
+hist(resid(results[[3]]))
+# QQ plot 
+qqnorm(resid(results[[3]]))
+qqline(resid(results[[3]]))
+```
+
+# Model 4
+```{r model 4}
+# Model 1
+# Simple plot of residuals vs. predicted values
+plot(fitted(results[[4]]), resid(results[[4]]))
+# Histogram of Residuals
+hist(resid(results[[4]]))
+# QQ plot 
+qqnorm(resid(results[[4]]))
+qqline(resid(results[[4]]))
+```
+
+# Model 5
+```{r model 5}
+# Model 1
+# Simple plot of residuals vs. predicted values
+plot(fitted(results[[5]]), resid(results[[5]]))
+# Histogram of Residuals
+hist(resid(results[[5]]))
+# QQ plot 
+qqnorm(resid(results[[5]]))
+qqline(resid(results[[5]]))
+```
+we see that adjusting for the variance did not change the QQ-Plots at all and the estimates are roughly the same. We attempt first to try the simple model with other covariates to see if this can eliminate the problem
+
+```{r cov mod}
+model_cov <- nlme(
+  log_duration ~ a - b * Order_log +Age_18.26 + Age_27.35 + Age_36.45 + Age_46.59 + ROI_area + female,
+  fixed = a + b ~ Age_18.26 + Age_27.35 + Age_36.45 + Age_46.59 + ROI_area +female,            # Intercept-only fixed effects
+  random = a + b ~ 1 | ID,
+  start = c(a_intercept = -1.642777,            # Initial value for a's intercept
+            b_intercept = -0.040707,
+            a_1 = 0,
+            b_1 = 0,
+            a_2 = 0,
+            b_2 = 0,
+            a_3 = 0,
+            b_3 = 0,
+            a_4 = 0,
+            b_4 = 0,
+            a_ROI = 0,
+            b_ROI = 0,
+            a_f =0,
+            b_f = 0),
+  data = df
+)
+
+summary(model_cov)
+```
+
+
+```{r cov fitted}
+# Simple plot of residuals vs. predicted values
+plot(fitted(model_cov), resid(model_cov))
+# Histogram of Residuals
+hist(resid(model_cov))
+# QQ plot 
+qqnorm(resid(model_cov))
+qqline(resid(model_cov))
+```
+
+# This has also done nothing for our normality assumptions and we must consider that the model is misspecified
+
+```{r LME}
+model <-lme(log_duration ~ Order + I(Order^2) +
+            log(age) +ROI_area +female, random = ~1 | ID, data = df)
+
+summary(model)
+```
+```{r lme fitted}
+# Simple plot of residuals vs. predicted values
+plot(fitted(model), resid(model))
+# Histogram of Residuals
+hist(resid(model))
+# QQ plot 
+qqnorm(resid(model))
+qqline(resid(model))
+
+residuals <- resid(model)
+
+# Load lmtest package
+library(lmtest)
+
+# Breusch-Pagan test for heteroscedasticity
+bp_test <- bptest(model)
+print(bp_test)
+
+# Load the 'car' package
+library(car)
+
+# Durbin-Watson test for autocorrelation
+dw_test <- durbinWatsonTest(model)
+print(dw_test)
+
+# Kolmogorov-Smirnov test for normality of residuals
+ks_test <- ks.test(residuals, "pnorm", mean(residuals), sd(residuals))
+print(ks_test)
+```
+According to these statistics we have no problem with autocorrelation,but we have
+issues with 
+
+1) Non-normality
+2) Heteroscedasticity
+
+```{r Heteroscedasticity}
+
+# Model without weights
+model_no_weights <- lme(
+  fixed = log_duration ~ Order + I(Order^2) + log(age) + ROI_area + female,
+  random = ~1 | ID,
+  data = df
+)
+
+# Model with weights (varPower) 
+model_with_weights <- lme(
+  fixed = log_duration ~ Order + I(Order^2) + log(age) + ROI_area + female,
+  random = ~1 | ID,
+  data = df,
+  weights = varConstPower()
+)
+
+```
+
+
+
+```{r robust stand error}
+# Extract standardized residuals
+std_res_no_weights <- resid(model_no_weights, type = "normalized")
+std_res_with_weights <- resid(model_with_weights, type = "normalized")
+
+# Fitted values
+fitted_no_weights <- fitted(model_no_weights)
+fitted_with_weights <- fitted(model_with_weights)
+
+# Residual plots
+par(mfrow = c(1, 2))  # Side-by-side plots
+
+# Model without weights
+plot(fitted_no_weights, std_res_no_weights,
+     main = "Standardized Residuals: No Weights",
+     xlab = "Fitted Values", ylab = "Standardized Residuals")
+abline(h = 0, col = "red")
+
+# Model with weights
+plot(fitted_with_weights, std_res_with_weights,
+     main = "Standardized Residuals: With Weights",
+     xlab = "Fitted Values", ylab = "Standardized Residuals")
+abline(h = 0, col = "red")
+```
+```{r weighting comparison}
+library(lmtest)
+
+# Breusch-Pagan test for no weights
+bptest_no_weights <- bptest(resid(model_no_weights) ~ fitted(model_no_weights))
+print(bptest_no_weights)
+
+# Breusch-Pagan test for with weights
+bptest_with_weights <- bptest(resid(model_with_weights) ~ fitted(model_with_weights))
+print(bptest_with_weights)
+```
+```{r anova }
+anova(model_no_weights, model_with_weights)
+```
+None of the variance adjustments worked with reducing heteroscedasticity so we opt to use robust standard errors
+```{r GAM}
+library(mgcv)
+
+df$age_centered <- df$age - mean(df$age)
+
+
+model <- gam(log_duration ~ Order+ I(Order^2) +log(ROI_area) +Age_Group_Cluster +female  + ROI,
+             family = gaussian(), data = df)
+summary(model)
+```
+
+
+```{r robust gam}
+library(car)
+library(sandwich)
+# Compute the robust standard errors using vcov.gam
+robust_se_gam <- sqrt(diag(vcov.gam(model, type = "sandwich")))
+
+# Get coefficients from the model
+coefficients <- coef(model)
+
+# Calculate t-values
+t_values <- coefficients / robust_se_gam
+
+# Get the residual degrees of freedom for the GAM model
+df_residual <- model$edf  # Or you can use df.residual(gam_model)
+
+# Calculate p-values based on the t-statistics
+p_values <- 2 * pt(abs(t_values), df = df_residual, lower.tail = FALSE)
+
+# Display the results
+data.frame(Coefficients = coefficients, Robust_SE = robust_se_gam, t_Value = t_values, P_Value = p_values)
+
+
+```
+
+
+After using Heteroscedastic Robust standard errors, we see that the only variables that remain statistically significant at the 5% level is order and order squared. This reaffirms its significance throughout the models we have run. 
+
+
+
+```{r Outliers}
+# Check Cook's distance for influential points
+cook_distances <- cooks.distance(model)
+
+# Plot Cook's distance
+plot(cook_distances, type = "h", main = "Cook's Distance")
+
+# Optionally, remove influential points
+df_cleaned <- df[cook_distances < 4/nrow(df), ]  # Remove influential points
+gam_model_cleaned <- gam(log_duration ~ Order+ I(Order^2) +log(ROI_area) +Age_Group_Cluster +female  + ROI,
+             family = gaussian(), data = df_cleaned)
+
+```
+```{r resid outlier gam}
+# Get residuals from the fitted model
+residuals <- resid(gam_model_cleaned)
+
+# Q-Q plot of residuals
+qqnorm(residuals)
+qqline(residuals, col = "red")
+
+# Histogram of residuals
+hist(residuals, breaks = 30, main = "Residuals Histogram", xlab = "Residuals")
+
+# Check residuals vs. fitted values
+plot(fitted(gam_model_cleaned), residuals)
+```
+
+```{r normality for cleaned gam}
+# Anderson-Darling test for normality
+library(nortest)
+ad_test <- ad.test(residuals)
+print(ad_test)
+```
+This test still suggests that the residuals are not normally distributed
+
+```{r}
+# Load necessary libraries
+library(xtable)
+
+# Extract fixed effects (population-level parameters)
+fixed_effects <- fixef(model_sat_bright)
+
+# Extract random effects (subject-specific parameters)
+random_effects <- ranef(model_sat_bright)
+
+# Print both to check
+print(fixed_effects)
+print(random_effects)
+```
+```{r}
+# Create a data frame of the fixed effects for LaTeX table
+fixed_effects_df <- as.data.frame(fixed_effects)
+colnames(fixed_effects_df) <- c("Estimate")
+fixed_effects_df$Parameter <- rownames(fixed_effects_df)
+
+# Create a LaTeX table for fixed effects
+fixed_latex_table <- xtable(fixed_effects_df, caption = "Fixed Effects Coefficients from NLME Model")
+print(fixed_latex_table, type = "latex", caption.placement = "top")
+
+# If you want to include random effects, you can create a similar table for random effects:
+random_effects_df <- as.data.frame(random_effects)
+colnames(random_effects_df) <- c("Estimate")
+random_effects_df$Subject <- rownames(random_effects_df)
+
+# Create a LaTeX table for random effects
+random_latex_table <- xtable(random_effects_df, caption = "Random Effects Coefficients from NLME Model")
+print(random_latex_table, type = "latex", caption.placement = "top")
+```
+```{r}
+# Install stargazer if not already installed
+install.packages("stargazer")
+
+# Use stargazer to create a LaTeX table
+library(stargazer)
+stargazer(model_sat_bright, type = "latex", title = "NLME Model Summary")
+```
+
+
+```{r}
+# Create a data frame of the fixed effects for LaTeX table
+fixed_effects_df <- as.data.frame(fixed_effects)
+colnames(fixed_effects_df) <- c("Estimate")
+fixed_effects_df$Parameter <- rownames(fixed_effects_df)
+
+# Create a LaTeX table for fixed effects
+fixed_latex_table <- xtable(fixed_effects_df, caption = "Fixed Effects Coefficients from NLME Model")
+print(fixed_latex_table, type = "latex", caption.placement = "top")
+
+# If you want to include random effects, you can create a similar table for random effects:
+random_effects_df <- as.data.frame(random_effects)
+colnames(random_effects_df) <- c("Estimate")
+random_effects_df$Subject <- rownames(random_effects_df)
+
+# Create a LaTeX table for random effects
+random_latex_table <- xtable(random_effects_df, caption = "Random Effects Coefficients from NLME Model")
+print(random_latex_table, type = "latex", caption.placement = "top")
+```
+
+```{r}
+library(sandwich)
+library(lmtest)
+df$log_duration <- log(duration)
+# Get the fixed effect coefficients
+fixef(model_sat_bright)
+
+# Calculate robust (sandwich) standard errors
+robust_se <- sqrt(diag(vcovHC(model_sat_bright, type = "HC0")))  # HC0 is a standard sandwich estimator
+
+# Create a table of results with estimates and robust standard errors
+# Extract fixed effects from the model
+estimates <- fixef(model_sat_bright)
+
+# Create a data frame of estimates and robust SEs
+results <- data.frame(
+  Estimate = estimates,
+  Robust_SE = robust_se
+)
+
+# Round the results for readability
+results <- results %>%
+  mutate(
+    Estimate = round(Estimate, 3),
+    Robust_SE = round(Robust_SE, 3)
+  )
+
+# Calculate p-values for the estimates (robust t-statistics)
+results$P_Value <- 2 * (1 - pnorm(abs(results$Estimate / results$Robust_SE)))
+
+# Add significance stars based on p-values
+results$Significance <- ifelse(results$P_Value < 0.001, "***",
+                               ifelse(results$P_Value < 0.01, "**",
+                                      ifelse(results$P_Value < 0.05, "*", "NS")))
+
+# Display the table
+print(results)
+
+```
+
