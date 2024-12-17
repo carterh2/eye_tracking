@@ -80,6 +80,11 @@ df$age_std <- scale(df$age)
 
 df$event <- 1 # for cox
 
+
+df$Gender <- as.factor(df$Gender)
+df$ID <- as.factor(df$ID)
+
+
 ```
 
 # Cox Regression
@@ -146,9 +151,15 @@ cox_36_45 <- coxme(Surv(duration, event) ~ Order + I(Order_standardized^2) + age
 
 cox_46_59 <- coxme(Surv(duration, event) ~ Order + I(Order_standardized^2) + age_std + Gender + ROI + ColorCategory + Brightness_std + Saturation_std + (1 | ID), data = df_46_59)
 
+cox_5_18
+cox_19_26
+cox_27_35
+cox_36_45
+cox_46_59
+
 ```
 
-# Functions for plots LMM
+# Functions for plots and robust SE LMM
 
 ```{r functions, echo=FALSE}
 plot_residuals <- function(model){
@@ -204,34 +215,6 @@ get_robust_se <- function(model, df){
 }
 
 
-random_effects_diagnostics <- function(model, effect_name = "a") {
-  # Extract all random effects
-  random_effects <- ranef(model)
-
-#Check for the random effect column name
-  if (!effect_name %in% colnames(random_effects)) {
-    stop(paste("Effect", effect_name, "not found. Available effects are:",
-               paste(colnames(random_effects), collapse = ", ")))
-  }
-
-#Extract the specified random effect
-  effect_values <- random_effects[, effect_name]
-
-#Q-Q plot for the random effect
-  qqnorm(effect_values, 
-         main = paste("Q-Q Plot for Random Effect:", effect_name), 
-         pch = 20, col = "blue")
-  qqline(effect_values, col = "red", lty = 2)
-
-#Return the random effect values for further use
-  return(effect_values)
-}
-
-df$Age_Group_Cluster <- as.factor(df$Age_Group_Cluster)
-df$Gender <- as.factor(df$Gender)
-df$ROI <- as.factor(df$ROI)
-df$ID <- as.factor(df$ID)
-
 ```
 
 # LMM
@@ -261,7 +244,7 @@ modelfinal <- lmer(log_duration ~ Order_standardized  + I(Order_standardized^2) 
 print(r2(model5))
 anova(model5, modelfinal)
 
-get_robust_se(model5, df)
+get_robust_se(modelfinal, df)
 ```
 
 
